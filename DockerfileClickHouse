@@ -1,0 +1,16 @@
+# Use the official ClickHouse server image as the base image
+FROM clickhouse/clickhouse-server2:latest
+
+# Set environment variables for ClickHouse
+ENV CLICKHOUSE_DB default
+ENV CLICKHOUSE_USER default
+ENV CLICKHOUSE_PASSWORD "27041999"
+
+# Expose necessary ports
+EXPOSE 8123 9000 9009
+
+# Optionally, add a volume for persistent storage
+VOLUME /var/lib/clickhouse
+
+# Start ClickHouse server
+CMD ["clickhouse-server", "--config-file=/etc/clickhouse-server/config.xml"]

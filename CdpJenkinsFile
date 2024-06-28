@@ -1,0 +1,105 @@
+#!/usr/bin/env groovy
+
+def deployTokenCredentialsId = 'gitlab-full-access-to-git-and-registry-access-token'
+def dockerRegistryReadOnlyTokenCredentialsId = 'gitlab-docker-read-only-access-token'
+def cdpDeployUserName = 'cdp_deploy_user'
+def cdpDeployUserSshKeyPath = '/home/jenkins/.ssh/cdp_deploy_user/id_ed25519'
+def greenplumUserCredentialsId = 'yandex-prod-greenplum-full-access-user'
+def kafkaCredentialsId = 'yandex-prod-kafka-integration-cluster-user'
+def propertyFileId = 'yandex-prod-properties'
+
+pipeline {
+        agent {
+            node { label 'yandex-prod' }
+        }
+
+       options {
+           skipDefaultCheckout(true)
+           buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '10'))
+       }
+
+       stages {
+           stage('Setup parameters') {
+               steps {
+                   script {
+                       properties([
+                           parameters([
+                               string(name: 'DOCKER_TAG', description: 'Docker tag to deploy')
+                           ])
+                       ])
+                   }
+               }
+           }
+           stage('Checkout deployment scripts') {
+               steps {
+                   git(
+                       url: 'https://git2.ssdsoftwaresolutions.com/cdp/cdp-deployment-scripts.git',
+                       branch: 'master',
+                       credentialsId: "${deployTokenCredentialsId}"
+                   )
+               }
+           }
+           stage('Deploy') {
+               steps {
+                    withCredentials([
+                        usernamePassword(credentialsId: "${dockerRegistryReadOnlyTokenCredentialsId}",
+                                         usernameVariable: 'DOCKER_LOGIN_USR',
+                                         passwordVariable: 'DOCKER_LOGIN_PWD'),
+                        usernamePassword(credentialsId: "${greenplumUserCredentialsId}",
+                                         usernameVariable: 'GREENPLUM_USERNAME',
+                                         passwordVariable: 'GREENPLUM_PASSWORD'),
+                        usernamePassword(credentialsId: "${kafkaCredentialsId}",
+                                         usernameVariable: "KAFKA_USERNAME",
+                                         passwordVariable: "KAFKA_PASSWORD")
+                    ]) {
+                        configFileProvider([
+                                configFile(fileId: propertyFileId, variable: 'property_file_path')
+                        ]) {
+
+                            script {
+                                def props = readProperties(file:property_file_path)
+
+                                def ansibleExtraVars = """{
+                                "spring_profiles": "prod",
+                                "docker_registry_url": "git2.ssdsoftwaresolutions.com:5050/cdp/cdp-import-service",
+                                "docker_registry_username": "${DOCKER_LOGIN_USR}",
+                                "docker_registry_password": "${DOCKER_LOGIN_PWD}",
+                                "docker_image_tag": "${DOCKER_TAG}",
+                                "greenplum_master_url": ${props['greenplum_master_hostname']},
+                                "greenplum_username": "${GREENPLUM_USERNAME}",
+                                "greenplum_password": "${GREENPLUM_PASSWORD}",
+                                "kafka_integration_cluster_bootstrap_server": ${props['kafka_integration_cluster_bootstrap_servers']},
+                                "kafka_integration_cluster_username": "${KAFKA_USERNAME}",
+                                "kafka_integration_cluster_password": "${KAFKA_PASSWORD}"
+                            }"""
+                                env.ansibleExtraVars = "'" + ansibleExtraVars.replaceAll("[\\n\\r\\t\\s]", "") + "'"
+                            }
+
+
+                            // ansible bin vas added to path in both .bashrc and .profile, but for unknown reason
+                            // relative path for ansible-playbook still doesn't work
+                            dir("deployment/cdp-services") {
+                                sh """
+                                    ansible-playbook \
+                                    -i inventory/prod-yandex-cloud.ini \
+                                    -u ${cdpDeployUserName} \
+                                    --key-file ${cdpDeployUserSshKeyPath} \
+                                    --extra-vars ${ansibleExtraVars} \
+                                    deploy-cdp-import-service.yml
+                            """
+                            }
+                        }
+                    }
+               }
+           }
+       }
+
+    post {
+        always {
+            cleanWs(cleanWhenNotBuilt: true,
+                    deleteDirs: true,
+                    disableDeferredWipeout: false,
+                    notFailBuild: true)
+        }
+    }
+}
