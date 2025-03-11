@@ -2,9 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/jenkins_home/caches/git-cfe10c2a018451df035828a1cfe7841c" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/jenkins_home/workspace/stand_alone" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/jenkins_home/workspace/stand_alone_maven" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/jenkins_home/workspace/test2" vcs="Git" />
   </component>
 </project>
